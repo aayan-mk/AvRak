@@ -1,6 +1,7 @@
 package com.avrak
 
 import android.app.Application
+import com.avrak.directcall.DirectCallPackage
 import com.facebook.react.PackageList
 import com.facebook.react.ReactApplication
 import com.facebook.react.ReactHost
@@ -12,11 +13,11 @@ class MainApplication : Application(), ReactApplication {
   override val reactHost: ReactHost by lazy {
     getDefaultReactHost(
       context = applicationContext,
-      packageList =
+      packageList = 
         PackageList(this).packages.apply {
-          // Packages that cannot be autolinked yet can be added manually here, for example:
-          // add(MyReactNativePackage())
-        },
+          // Register your custom native module manually
+          add(DirectCallPackage())
+        }
     )
   }
 

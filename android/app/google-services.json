@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "764185158160",
+    "project_id": "avrak-9fc3f",
+    "storage_bucket": "avrak-9fc3f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:764185158160:android:a411a7fbfcd951fbb36095",
+        "android_client_info": {
+          "package_name": "com.avrak"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAAeoI_KiWYoUZ5-eZhOoSWZmH4oP-8wcQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
