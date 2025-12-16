@@ -1,89 +1,176 @@
 // src/components/ConfirmModal.js
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
   Modal,
   StyleSheet,
-  Button,
+  TouchableOpacity,
   Vibration,
 } from "react-native";
 
-export default function ConfirmModal({ visible, seconds = 30, onCancel, onTimeout }) {
+export default function ConfirmModal({
+  visible,
+  seconds = 30,
+  onCancel,
+  onTimeout,
+  onConfirmNow,
+}) {
   const [timeLeft, setTimeLeft] = useState(seconds);
+  const timerRef = useRef(null);
+  const triggeredRef = useRef(false); // prevents double firing
 
+  // ------------------------------------------------
+  // START / STOP TIMER BASED ON `visible`
+  // ------------------------------------------------
   useEffect(() => {
-    if (!visible) return;
+    if (!visible) {
+      cleanup();
+      return;
+    }
 
+    triggeredRef.current = false;
     setTimeLeft(seconds);
 
-    // 🔊 Pattern vibration for loud warning
-    const vibrationPattern = [500, 500, 500, 500, 500];
-    Vibration.vibrate(vibrationPattern, true);
+    // Alarm-style vibration
+    Vibration.vibrate([400, 600], true);
 
-    const timer = setInterval(() => {
-      setTimeLeft((s) => {
-        if (s <= 1) {
-          Vibration.cancel();
-          clearInterval(timer);
-          onTimeout();
-          return 0;
-        }
-        return s - 1;
-      });
+    timerRef.current = setInterval(() => {
+      setTimeLeft(prev => prev - 1);
     }, 1000);
 
-    return () => {
-      Vibration.cancel();
-      clearInterval(timer);
-    };
-  }, [visible]);
+    return cleanup;
+  }, [visible, seconds]);
 
+  // ------------------------------------------------
+  // AUTO TIMEOUT
+  // ------------------------------------------------
+  useEffect(() => {
+    if (!visible) return;
+    if (timeLeft > 0) return;
+    if (triggeredRef.current) return;
+
+    triggeredRef.current = true;
+    cleanup();
+
+    // run outside render cycle
+    setTimeout(() => {
+      onTimeout && onTimeout();
+    }, 0);
+  }, [timeLeft, visible, onTimeout]);
+
+  // ------------------------------------------------
+  // CLEANUP (single source of truth)
+  // ------------------------------------------------
+  function cleanup() {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    Vibration.cancel();
+  }
+
+  // ------------------------------------------------
+  // BUTTON HANDLERS
+  // ------------------------------------------------
+  function handleSafe() {
+    triggeredRef.current = true;
+    cleanup();
+    onCancel && onCancel();
+  }
+
+  function handleConfirmNow() {
+    triggeredRef.current = true;
+    cleanup();
+    onConfirmNow && onConfirmNow();
+  }
+
+  // ------------------------------------------------
+  // UI (NO CONDITIONAL HOOKS ABOVE THIS)
+  // ------------------------------------------------
   return (
     <Modal visible={visible} transparent animationType="fade">
       <View style={styles.overlay}>
         <View style={styles.modal}>
-          <Text style={styles.title}>Possible Accident Detected</Text>
+
+          <Text style={styles.title}>🚨 Accident Detected</Text>
+
           <Text style={styles.subtitle}>
-            Sending alert in {timeLeft} seconds...
+            Sending emergency alert in{" "}
+            <Text style={styles.timer}>{timeLeft}s</Text>
           </Text>
 
-          <View style={{ height: 15 }} />
+          <View style={{ height: 20 }} />
 
-          <Button title="I am Safe (Cancel)" color="#28a745" onPress={() => {
-            Vibration.cancel();
-            onCancel();
-          }} />
+          <TouchableOpacity
+            style={[styles.btn, styles.safeBtn]}
+            onPress={handleSafe}
+          >
+            <Text style={styles.btnText}>I’m Safe</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.btn, styles.helpBtn]}
+            onPress={handleConfirmNow}
+          >
+            <Text style={styles.btnText}>Send Help Now</Text>
+          </TouchableOpacity>
+
         </View>
       </View>
     </Modal>
   );
 }
 
+// ------------------------------------------------
+// STYLES
+// ------------------------------------------------
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
+    backgroundColor: "rgba(0,0,0,0.6)",
     justifyContent: "center",
     alignItems: "center",
   },
   modal: {
-    width: "85%",
+    width: "88%",
     backgroundColor: "#fff",
-    padding: 20,
-    borderRadius: 12,
-    elevation: 10,
+    padding: 22,
+    borderRadius: 14,
+    elevation: 12,
   },
   title: {
-    fontSize: 20,
-    fontWeight: "700",
+    fontSize: 22,
+    fontWeight: "800",
     textAlign: "center",
     marginBottom: 10,
+    color: "#d9534f",
   },
   subtitle: {
     textAlign: "center",
     fontSize: 16,
-    color: "#444",
+    color: "#333",
+  },
+  timer: {
+    fontWeight: "800",
+    color: "#d9534f",
+  },
+  btn: {
+    paddingVertical: 14,
+    borderRadius: 10,
+    marginTop: 12,
+    alignItems: "center",
+  },
+  safeBtn: {
+    backgroundColor: "#28a745",
+  },
+  helpBtn: {
+    backgroundColor: "#d9534f",
+  },
+  btnText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "700",
   },
 });

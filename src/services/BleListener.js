@@ -1,3 +1,7 @@
+// ------------------------------------------------------------
+//  BLE LISTENER FOR AVRAK HELMET (ESP32)
+//  + DEMO MODE FOR TESTING WITHOUT HARDWARE
+// ------------------------------------------------------------
 import { Platform, PermissionsAndroid } from "react-native";
 import { Buffer } from "buffer";
 
@@ -8,24 +12,46 @@ try {
   BleManagerClass = null;
 }
 
-// ---------------------------
-// UUIDs for ESP32 HELMET
-// ---------------------------
-const SERVICE_UUID = "0000abcd-0000-1000-8000-00805f9b34fb";
-const CHAR_UUID_NOTIFY = "0000dcba-0000-1000-8000-00805f9b34fb";
-const DEVICE_PREFIX = "Helmet";
+// ------------------------------------------------------------
+//  UUIDs (MATCH ESP32 CODE)
+// ------------------------------------------------------------
+const SERVICE_UUID = "180a";
+const CHAR_UUID_NOTIFY = "2a57";
+const DEVICE_PREFIX = "AvRak_Helmet_";
 
 export default class BleListener {
-  constructor(onImpact) {
+  constructor(onImpact, demoMode = false) {
     this.onImpact = onImpact;
+
+    this.demoMode = demoMode;      // ⭐ NEW
     this.manager = BleManagerClass ? new BleManagerClass() : null;
+
     this.connectedDevice = null;
     this.subscription = null;
   }
 
-  // ---------------------------------------------------------
-  // ANDROID 12+ RUNTIME PERMISSIONS CHECK
-  // ---------------------------------------------------------
+  // ------------------------------------------------------------
+  //  DEMO MODE — Fake Accident JSON
+  // ------------------------------------------------------------
+  simulateImpact() {
+    const fakePayload = {
+      id: "DEMO_HELMET_001",
+      gx: 0.4,
+      gy: 0.2,
+      gz: 3.5,
+      crash: 1,           // ACCIDENT DETECTED
+      ts: Date.now()
+    };
+
+    console.log("🔥 DEMO IMPACT TRIGGERED:", fakePayload);
+
+    // Call main impact handler
+    this.onImpact && this.onImpact(fakePayload);
+  }
+
+  // ------------------------------------------------------------
+  // HANDLE ANDROID PERMISSIONS
+  // ------------------------------------------------------------
   async ensurePermissions() {
     if (Platform.OS !== "android") return true;
 
@@ -33,112 +59,106 @@ export default class BleListener {
       const result = await PermissionsAndroid.requestMultiple([
         PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
         PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
-        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
+        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
       ]);
 
-      const scanOk = result["android.permission.BLUETOOTH_SCAN"] === "granted";
-      const connOk = result["android.permission.BLUETOOTH_CONNECT"] === "granted";
-      const locOk = result["android.permission.ACCESS_FINE_LOCATION"] === "granted";
-
-      return scanOk && connOk && locOk;
-    } catch (e) {
-      console.warn("Permission error:", e);
+      return (
+        result["android.permission.BLUETOOTH_SCAN"] === "granted" &&
+        result["android.permission.BLUETOOTH_CONNECT"] === "granted" &&
+        result["android.permission.ACCESS_FINE_LOCATION"] === "granted"
+      );
+    } catch {
       return false;
     }
   }
 
-  // ---------------------------------------------------------
-  // SCAN FOR HELMET DEVICE
-  // ---------------------------------------------------------
+  // ------------------------------------------------------------
+  // SCAN FOR HELMET
+  // ------------------------------------------------------------
   async startScan(timeoutMs = 10000) {
-    if (!this.manager) throw new Error("BLE Manager not available");
+    // ⭐ DEMO MODE SHORTCUT
+    if (this.demoMode) {
+      console.log("📱 Demo Mode: Skipping scan, no ESP32 required");
+      return true;
+    }
+
+    if (!this.manager) throw new Error("BLE Manager unavailable");
 
     const ok = await this.ensurePermissions();
-    if (!ok) throw new Error("Bluetooth permissions not granted");
+    if (!ok) throw new Error("Bluetooth permissions denied");
 
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       let found = false;
 
-      try {
-        this.manager.startDeviceScan(null, { scanMode: 2 }, async (error, device) => {
-          if (error) {
-            console.warn("Scan error:", error);
-            this.manager.stopDeviceScan();
-            return reject(error);
+      this.manager.startDeviceScan(null, { scanMode: 2 }, async (err, device) => {
+        if (err) {
+          console.log("Scan error:", err);
+          this.manager.stopDeviceScan();
+          return resolve(false);
+        }
+
+        if (!device?.name) return;
+
+        if (device.name.startsWith(DEVICE_PREFIX)) {
+          found = true;
+          this.manager.stopDeviceScan();
+          console.log("Helmet found:", device.name);
+
+          try {
+            await this.connect(device);
+            resolve(true);
+          } catch {
+            resolve(false);
           }
+        }
+      });
 
-          if (!device) return;
-
-          const name = device.name || device.localName || "";
-          const matchesPrefix = name.startsWith(DEVICE_PREFIX);
-          const matchesService =
-            device.serviceUUIDs && device.serviceUUIDs.includes(SERVICE_UUID);
-
-          if (matchesPrefix || matchesService) {
-            found = true;
-            this.manager.stopDeviceScan();
-
-            try {
-              await this.connect(device);
-              resolve(true);
-            } catch (e) {
-              reject(e);
-            }
-          }
-        });
-      } catch (e) {
-        reject(e);
-      }
-
-      // Timeout
       setTimeout(() => {
         if (!found) {
-          try {
-            this.manager.stopDeviceScan();
-          } catch {}
+          try { this.manager.stopDeviceScan(); } catch {}
           resolve(false);
         }
       }, timeoutMs);
     });
   }
 
-  // ---------------------------------------------------------
-  // CONNECT TO DEVICE
-  // ---------------------------------------------------------
+  // ------------------------------------------------------------
+  // CONNECT TO HELMET
+  // ------------------------------------------------------------
   async connect(device) {
-    if (!this.manager) throw new Error("BLE Manager not available");
+    if (this.demoMode) {
+      console.log("📱 Demo Mode: Skipping actual connect");
+      return true;
+    }
 
     try {
       const connected = await this.manager.connectToDevice(device.id, {
-        autoConnect: false,
+        autoConnect: true,
       });
 
       await connected.discoverAllServicesAndCharacteristics();
-
       this.connectedDevice = connected;
-      this._startNotifyMonitor();
 
-    } catch (e) {
-      console.warn("BLE Connect Error:", e);
-      throw new Error("Failed to connect to device");
+      console.log("Connected:", connected.name);
+
+      this.monitorNotifications();
+    } catch (err) {
+      throw err;
     }
   }
 
-  // ---------------------------------------------------------
-  // MONITOR NOTIFY CHARACTERISTIC
-  // ---------------------------------------------------------
-  _startNotifyMonitor() {
-    if (!this.connectedDevice) {
-      console.warn("Cannot start monitor: no connected device");
-      return;
-    }
+  // ------------------------------------------------------------
+  // READ ESP32 NOTIFICATION DATA
+  // ------------------------------------------------------------
+  monitorNotifications() {
+    if (!this.connectedDevice) return;
 
     this.subscription = this.connectedDevice.monitorCharacteristicForService(
       SERVICE_UUID,
       CHAR_UUID_NOTIFY,
       (error, characteristic) => {
         if (error) {
-          console.warn("BLE monitor error:", error);
+          console.log("Notify error:", error);
           return;
         }
 
@@ -148,30 +168,28 @@ export default class BleListener {
           const decoded = Buffer.from(characteristic.value, "base64").toString("utf8");
           const json = JSON.parse(decoded);
 
-          if (json.type === "impact") {
-            this.onImpact && this.onImpact(json);
+          console.log("BLE JSON:", json);
+
+          if (json.crash === 1) {
+            this.onImpact(json);
           }
         } catch (err) {
-          console.warn("Invalid BLE JSON:", err);
+          console.log("JSON parse error:", err);
         }
       }
     );
   }
 
-  // ---------------------------------------------------------
-  // DISCONNECT CLEANLY
-  // ---------------------------------------------------------
+  // ------------------------------------------------------------
+  // DISCONNECT
+  // ------------------------------------------------------------
   async disconnect() {
-    try {
-      if (this.subscription && this.subscription.remove) {
-        this.subscription.remove();
-      }
+    if (this.subscription) this.subscription.remove();
 
-      if (this.connectedDevice) {
+    if (this.connectedDevice) {
+      try {
         await this.manager.cancelDeviceConnection(this.connectedDevice.id);
-      }
-    } catch (e) {
-      console.warn("Disconnect error:", e);
+      } catch {}
     }
 
     this.subscription = null;
